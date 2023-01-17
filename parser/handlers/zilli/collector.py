@@ -17,15 +17,15 @@ class ParserZilli:
         self.url = url
         self.more_detail_raw = []
         self.bar = bar
+        self.fieldnames = ['article', 'title', 'subtitle', 'more_details', 'materials', 'colours', 'photos']
 
         if create_csv:
             self.init_csv()
 
     def init_csv(self):
-        with open(f'./parser/csv/zilli/{self.url.split("en/")[1]}.csv',
-                  'a') as file:
-            fieldnames = ['article', 'title', 'subtitle', 'size_and_fit', 'colours', 'photos']
-            writer = DictWriter(file, fieldnames=fieldnames, delimiter=';')
+        with open(f'./parser/zilli/csv/{self.url.split("en/")[1]}.csv',
+                  'w') as file:
+            writer = DictWriter(file, fieldnames=self.fieldnames, delimiter=';')
             writer.writeheader()
 
     async def translator(self, text):
@@ -44,10 +44,9 @@ class ParserZilli:
 
     async def create_csv(self, article, title, subtitle, more_detail, materials, colours, photos):
         async with aiofiles.open(
-                f'./parser/csv/zilli/{self.url.split("en/")[1]}.csv',
-                mode='a') as file:
-            fieldnames = ['article', 'title', 'subtitle', 'more_details', 'materials', 'colours', 'photos']
-            writer = aiocsv.AsyncDictWriter(file, fieldnames=fieldnames, delimiter=';')
+                f'./parser/zilli/csv/{self.url.split("en/")[1]}.csv',
+                mode='a', encoding='utf-8') as file:
+            writer = aiocsv.AsyncDictWriter(file, fieldnames=self.fieldnames, delimiter=';')
             await writer.writerow({
                 'article': article,
                 'title': title,
@@ -65,7 +64,6 @@ class ParserZilli:
             title = soup.find('h1', class_='main-title').text
             title = await self.translator(title)
         except BaseException as e:
-            print(f"Title error -- {link.attrs['href']} -- {e}")
             title = "--"
         await asyncio.sleep(0.5)
         return title
@@ -79,7 +77,6 @@ class ParserZilli:
             else:
                 subtitle = '--'
         except BaseException as e:
-            print(f"Subtitle error -- {link.attrs['href']} -- {e}")
             subtitle = '--'
         await asyncio.sleep(0.5)
         return subtitle
@@ -89,15 +86,14 @@ class ParserZilli:
             self.more_detail_raw = soup.select_one('.product_infos_tabs > li:nth-child(1) > div:nth-child(2) > '
                                                    'ul:nth-child(1)')
             if self.more_detail_raw:
-                more_detail = " ".join(
-                    [li_text.text for li_text in self.more_detail_raw.contents if not isinstance(li_text,
-                                                                                                 NavigableString)])
+                more_detail = ",,,".join(
+                    [li_text.text for li_text in self.more_detail_raw.contents[:-2] if not isinstance(li_text,
+                                                                                                      NavigableString)])
             else:
                 more_detail = soup.select_one('.product_infos_tabs > li:nth-child(1) > div:nth-child(2) > '
                                               'ul:nth-child(1)').text
             more_detail = await self.translator(more_detail)
         except BaseException as e:
-            print(f"More details error -- {link.attrs['href']} -- {e}")
             more_detail = "--"
         await asyncio.sleep(0.5)
         return more_detail
@@ -107,7 +103,7 @@ class ParserZilli:
             materials_raw = soup.select_one('.product_infos_tabs > li:nth-child(2) > div:nth-child(2) > '
                                             'ul:nth-child(1)')
             if materials_raw:
-                materials = " ".join(
+                materials = ",,,".join(
                     [li_text.text for li_text in materials_raw.contents if
                      not isinstance(li_text, NavigableString)])
             else:
@@ -115,7 +111,6 @@ class ParserZilli:
                                             'p:nth-child(1)').text
             materials = await self.translator(materials)
         except BaseException as e:
-            print(f"Materials error -- {link.attrs['href']} -- {e}")
             materials = '--'
         await asyncio.sleep(0.5)
         return materials
@@ -125,7 +120,6 @@ class ParserZilli:
             article = soup.find('li', string=[re.compile(r"Ref. *"), re.compile(r"Réf. *"), re.compile(
                 r"[A-Z0-9]{3,}-[A-Z0-9]{3,}-[A-Z0-9]{3,}/[A-Z0-9]{3,} [A-Z0-9]*")]).text
         except BaseException as e:
-            print(f"Article error -- {link.attrs['href']} -- {e}")
             if isinstance(self.more_detail_raw[-2], Tag) and len(self.more_detail_raw) > 2:
                 article = self.more_detail_raw[-2].text
             elif isinstance(self.more_detail_raw[-2], Tag) and len(self.more_detail_raw) <= 2:
@@ -177,4 +171,5 @@ class ParserZilli:
             photos_links = [link.attrs['src'] for link in soup.find_all('img', {'itemprop': "image"})]
             await self.create_csv(article, title, subtitle, more_detail, materials, colours, photos_links)
         except BaseException as e:
-            print("Критическая ошибка -- пропуск ссылки")
+            print(f"Критическая ошибка -- пропуск ссылки -- сайт {self.url}")
+            return

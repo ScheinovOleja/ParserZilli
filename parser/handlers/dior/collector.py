@@ -16,7 +16,7 @@ class ParserDior:
         self.target = url[1]
         self.product_list = []
         self.detail_url = "https://api-fashion.dior.com/graph?GetProductStocks="
-        self.photo_url = 'https://www.dior.com/ru_ru/fashion/products/{article}'
+        self.dior_url = 'https://www.dior.com'
         self.rate_sem = asyncio.BoundedSemaphore(85)
         self.main_body_bags = {
             "requests": [
@@ -41,6 +41,7 @@ class ParserDior:
                             "query": "query GetProductStocks($id: String!) {\n  product: getProduct(id: $id) {"
                                      "code,"
                                      "sizeAndFit,"
+                                     "url,"
                                      "}}"
                             }
         self.main_headers = {
@@ -59,31 +60,36 @@ class ParserDior:
             "x-dior-locale": "ru_ru"
         }
 
+        self.fieldnames = ['article', 'title', 'subtitle', 'size_and_fit', 'colours', 'photos']
+
         self.bar = bar
         if create_csv:
             self.init_csv()
 
     def init_csv(self):
-        with open(f'./parser/csv/dior/{self.target}.csv',
-                  'a') as file:
-            fieldnames = ['article', 'title', 'subtitle', 'size_and_fit', 'colours', 'photos']
-            writer = DictWriter(file, fieldnames=fieldnames, delimiter=';')
+        with open(f'./parser/dior/csv/{self.target}.csv',
+                  'w') as file:
+            writer = DictWriter(file, fieldnames=self.fieldnames, delimiter=';')
             writer.writeheader()
 
-    async def get_photos(self, article):
+    async def get_photos(self, url, code):
+        photos = []
         async with ClientSession() as session:
-            async with session.get(self.photo_url.format(article=article)) as response:
-                extra_soup = BeautifulSoup(await response.text(), "lxml")
+            async with session.get(self.dior_url + url) as response:
+                extra_soup = BeautifulSoup(await response.text('utf-8'), "lxml")
                 photos_raw = extra_soup.find_all('img', alt=re.compile('aria_openGallery'))
-                photos = [link.attrs['src'] for link in photos_raw]
-        await asyncio.sleep(0.1)
-        return photos
+                if not photos_raw:
+                    async with session.get(self.dior_url + f"/{code}") as response:
+                        extra_soup = BeautifulSoup(await response.text('utf-8'), "lxml")
+                        photos_raw = extra_soup.find_all('img', alt=re.compile('aria_openGallery'))
+                photos.append([link.attrs['src'] for link in photos_raw])
+        await asyncio.sleep(0.5)
+        return photos[0]
 
     async def create_csv(self, article, title, subtitle, size_and_fit, colours, photos_links):
-        async with aiofiles.open(f'./parser/csv/dior/{self.target}.csv',
+        async with aiofiles.open(f'./parser/dior/csv/{self.target}.csv',
                                  'a') as file:
-            fieldnames = ['article', 'title', 'subtitle', 'size_and_fit', 'colours', 'photos']
-            writer = aiocsv.AsyncDictWriter(file, fieldnames=fieldnames, delimiter=';')
+            writer = aiocsv.AsyncDictWriter(file, fieldnames=self.fieldnames, delimiter=';')
             await writer.writerow({
                 'article': article,
                 'title': title,
@@ -148,7 +154,10 @@ class ParserDior:
                 colours = product['color']['group']
             except BaseException as e:
                 colours = '--'
-            photos = await self.get_photos(article)
+            photos = await self.get_photos(product['url'], product['code'])
+            if not photos:
+                raise BaseException
             await self.create_csv(article, title, subtitle, size_and_fit, colours, photos)
         except BaseException as e:
-            assert "Критическая ошибка -- пропуск ссылки"
+            print(f"Критическая ошибка -- пропуск ссылки -- сайт {self.url}")
+            return

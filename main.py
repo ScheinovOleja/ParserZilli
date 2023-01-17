@@ -36,7 +36,6 @@ class TotalParse:
         for link in self.links_dior:
             task_dior = ParserDior(link, bar)
             self.dior_tasks.append(asyncio.create_task(task_dior.main()))
-
         await asyncio.gather(*self.dior_tasks)
 
     async def total_start(self, site):
@@ -79,13 +78,14 @@ class TotalParse:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Парсер сайтов брендовой одежды',
                                      formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('--site', '-s', type=str,
+    parser.add_argument('-s', '--site', type=str,
                         help="""Если хотите спарсить только 1 сайт, то введите его название.
 Возможные варианты: [dior, zilli]
 Команда вводится следующим образом: python main.py -s dior/zilli
 Пропустить ввод сайта, если нужно спарсить всё""")
-
     args = parser.parse_args()
+    if not args.site:
+        args.site = 'all'
     loop = asyncio.get_event_loop()
     total_parser = TotalParse()
     loop.run_until_complete(total_parser.total_start(args.site))

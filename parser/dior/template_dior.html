@@ -1,0 +1,35 @@
+{% extends 'general_template.html' %}
+{% block content %}
+    <div class="content">
+        <div>
+            {% for i in range(count_records) %}
+                <div class="top_content">
+                    <div class="left_panel">
+                        <ul class="image_grid">
+                            {% for photo in data['photos'][i] %}
+                                <li class="image">
+                                    <div class="image-div">
+                                        <img src="data:image/webp;base64,{{ photo | safe }}" alt="">
+                                    </div>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    <div class="right_panel">
+                        <div class="title_subtitle-container">
+                            <h1>
+                                <span class="title">{{ data['title'][i] }}</span>
+                                <span class="subtitle">{{ data['subtitle'][i] }}</span>
+                            </h1>
+                            <p class="ref">Артикул: {{ data['article'][i] }}</p>
+                        </div>
+                        <div class="sizes-container">
+                            <p class="size">Размеры и посадка: <br>
+                                {{ data['size_and_fit'][i] }}</p>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+{% endblock %}
