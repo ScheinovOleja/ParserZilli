@@ -57,7 +57,8 @@ class TotalCreator:
                               'marginRight': 0,
                               'marginTop': 0,
                               'preferCSSPageSize': True
-                          })
+                          },
+                          power=2)
         bar()
 
     async def request_api_to_create_pdf(self, brand, bar):
