@@ -94,8 +94,10 @@ class TotalCreator:
                 await asyncio.gather(*main_task)
         if create or only_create:
             total = 0
-            total += len(os.listdir(self.path_dior_html))
-            total += len(os.listdir(self.path_zilli_html))
+            if site == 'dior' or site == 'all':
+                total += len(os.listdir(self.path_dior_html))
+            if site == 'zilli' or site == 'all':
+                total += len(os.listdir(self.path_zilli_html))
             with alive_bar(total, title='Процесс формирования PDF', theme='smooth') as bar:
                 await self.request_api_to_create_pdf(site, bar)
         else:
