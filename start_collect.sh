@@ -1,3 +1,3 @@
 source ./venv/bin/activate
-python main.py -s dior
+python main.py -s all
 deactivate
