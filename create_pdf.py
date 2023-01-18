@@ -1,54 +1,81 @@
 import argparse
 import asyncio
 import os
+import threading
 
+import aiofiles
+import numpy as np
 import pandas as pd
 from alive_progress import alive_bar
+from jinja2 import Environment, FileSystemLoader
 from pyhtml2pdf import converter
 
-from parser.handlers.dior.creator import CreatorDior
-from parser.handlers.zilli.creator import CreatorZilli
+from parser.handlers.general import get_photo_b64
 
 
 class TotalCreator:
 
     def __init__(self):
         self.total = 0
-        self.rate_sem = asyncio.BoundedSemaphore(50)
 
         self.path_dior_csv = './parser/dior/csv'
         self.path_dior_html = './parser/dior/html'
         self.path_dior_pdf = './parser/dior/pdf'
+        self.dior_template = './parser/dior/'
 
         self.path_zilli_csv = './parser/zilli/csv'
         self.path_zilli_html = './parser/zilli/html'
         self.path_zilli_pdf = './parser/zilli/pdf'
+        self.zilli_template = './parser/zilli/'
 
-        self.dior_tasks = []
-        self.zilli_tasks = []
+        self.env_dior = Environment(loader=FileSystemLoader(f"{self.dior_template}"), autoescape=True)
+        self.template_dior = self.env_dior.get_template('template_dior.html')
 
-    async def get_total(self, path, file, is_return=False):
-        df = pd.read_csv(f'{path}/{file}',
-                         delimiter=';', )
-        self.total += len(df)
-        if is_return:
-            return len(df)
+        self.env_zilli = Environment(loader=FileSystemLoader(f"{self.zilli_template}"), autoescape=True)
+        self.template_zilli = self.env_zilli.get_template('template_zilli.html')
+        self.create, self.only_create = bool, bool
+        self.all_tasks = []
 
-    async def start_zilli(self, bar):
-        task_zilli = CreatorZilli(bar)
-        for file in os.listdir(self.path_zilli_csv):
-            self.zilli_tasks.append(asyncio.create_task(task_zilli.main(file)))
-        await asyncio.gather(*self.zilli_tasks)
+    def parse_csv_dior(self, file):
+        return pd.read_csv(f'{self.path_dior_csv}/{file}',
+                           delimiter=';',
+                           dtype={
+                               'article': str,
+                               'title': str,
+                               'subtitle': str,
+                               'size_and_fit': str,
+                               'colours': str,
+                           },
+                           converters={"photos": lambda x: x.replace('\'', '').strip("[\'\']").split(", ")},
+                           )
 
-    async def start_dior(self, bar):
-        task_dior = CreatorDior(bar)
-        for file in os.listdir(self.path_dior_csv):
-            self.dior_tasks.append(asyncio.create_task(task_dior.main(file)))
-        await asyncio.gather(*self.dior_tasks)
+    def parse_csv_zilli(self, file):
+        return pd.read_csv(f'{self.path_zilli_csv}/{file}',
+                           delimiter=';',
+                           dtype={
+                               'article': str,
+                               'title': str,
+                               'subtitle': str,
+                           },
+                           converters={"photos": lambda x: x.replace('\'', '').strip("[\'\']").split(", "),
+                                       "more_details": lambda x: x.replace(',,,', '<br>'),
+                                       "materials": lambda x: x.replace(',,,', '<br>')},
+                           )
 
-    async def create_pdf(self, file, save_path, get_path, bar):
-        path = os.path.abspath(f"{get_path}/{file}")
-        converter.convert(f'file:///{path}', f"{save_path}/{file.replace('.html', '.pdf')}",
+    @staticmethod
+    async def general_treatment(data, file, i, site, path_html, path_pdf, template):
+        images = await get_photo_b64(data['photos'])
+        data['photos'] = images
+        async with aiofiles.open(f"{path_html}/{site.upper()}-{file.replace('.csv', f'--{i}.html')}", "w",
+                                 encoding='utf-8') as html_file:
+            await html_file.write(template.render(site=f"{site.upper()} - {file.replace('.csv', '')}", data=data,
+                                                  count_records=len(data['article'])))
+        return True
+
+    @staticmethod
+    async def create_pdf(path_pdf, site, file, html_file):
+        save_path = os.path.abspath(f"{path_pdf}/{site.upper()}-{file.replace('.html', f'.pdf')}")
+        converter.convert(f'file:///{os.path.abspath(html_file.name)}', f"{save_path}",
                           print_options={
                               'paperWidth': 400 / 25.4,
                               'paperHeight': 720 / 25.4,
@@ -58,49 +85,75 @@ class TotalCreator:
                               'marginTop': 0,
                               'preferCSSPageSize': True
                           },
-                          power=2)
-        bar()
+                          power=4)
 
-    async def request_api_to_create_pdf(self, brand, bar):
-        if brand == 'zilli' or brand == 'all':
-            files_zilli = [file for file in os.listdir(self.path_zilli_html)]
-            for file in files_zilli:
-                await self.create_pdf(file, self.path_zilli_pdf, self.path_zilli_html, bar)
-        if brand == 'dior' or brand == 'all':
-            files_dior = [file for file in os.listdir(self.path_dior_html)]
-            for file in files_dior:
-                await self.create_pdf(file, self.path_dior_pdf, self.path_dior_html, bar)
+    def start(self, file, site):
+        if not self.only_create:
+            if site == 'dior':
+                data = self.parse_csv_dior(file)
+            if site == 'zilli':
+                data = self.parse_csv_zilli(file)
+            count_chunks = 7 if len(data) <= 150 else 20
+            chunks = np.array_split(data, count_chunks)
+            tasks = []
+            print('Начал работу над html')
+            for i, new_data in enumerate(chunks):
+                args = self.general_treatment(new_data.to_dict('list'), file, i, 'ZILLI',
+                                              self.path_zilli_html, self.path_zilli_pdf,
+                                              self.template_zilli, ) if site == 'zilli' else self.general_treatment(
+                    new_data.to_dict('list'), file, i, 'DIOR',
+                    self.path_dior_html, self.path_dior_pdf,
+                    self.template_dior, )
+                task = threading.Thread(target=asyncio.run, args=(args,))
+                tasks.append(task)
+            for task in tasks:
+                task.start()
+            for task in tasks:
+                task.join()
+            print('Начал работу над PDF')
+            del chunks, args, count_chunks, data, new_data
+        if self.create or (self.only_create and self.create):
+            tasks = []
+            for html_file in os.listdir(self.path_dior_html) if site == 'dior' else os.listdir(self.path_zilli_html):
+                new_args = self.create_pdf(
+                    self.path_dior_pdf, site, html_file,
+                    open(f"{self.path_dior_html}/{html_file}")) if site == 'dior' else self.create_pdf(
+                    self.path_zilli_pdf, site, html_file,
+                    open(f"{self.path_zilli_html}/{html_file}"))
+                task = threading.Thread(target=asyncio.run, args=(new_args,))
+                tasks.append(task)
+                if len(tasks) == 5:
+                    for task in tasks:
+                        task.start()
+                    for task in tasks:
+                        task.join()
+                    tasks = []
 
-    async def total_start(self, site, create=True, only_create=False):
-        if site == 'all' and not only_create:
-            for file in os.listdir(self.path_dior_csv):
-                await self.get_total(self.path_dior_csv, file)
-            for file in os.listdir(self.path_zilli_csv):
-                await self.get_total(self.path_zilli_csv, file)
+    def total_start(self, site, create, only_create):
+        self.create, self.only_create = create, only_create
+        if site == 'all':
+            self.total += len(os.listdir(self.path_dior_csv))
+            self.total += len(os.listdir(self.path_zilli_csv))
             with alive_bar(self.total, title='Процесс формирования каталога с сайтов \"Zilli and Dior\"',
                            theme='smooth') as bar:
-                main_task = [asyncio.create_task(self.start_zilli(bar)), asyncio.create_task(self.start_dior(bar))]
-                await asyncio.gather(*main_task)
-        elif site == 'dior' and not only_create:
-            for file in os.listdir(self.path_dior_csv):
-                await self.get_total(self.path_dior_csv, file)
+                for file in os.listdir(self.path_dior_csv):
+                    self.start(file, 'dior')
+                    bar()
+                for file in os.listdir(self.path_zilli_csv):
+                    self.start(file, 'zilli')
+                    bar()
+        if site == 'dior':
+            self.total += len(os.listdir(self.path_dior_csv))
             with alive_bar(self.total, title='Процесс формирования каталога с сайта \"Dior\"', theme='smooth') as bar:
-                main_task = [asyncio.create_task(self.start_dior(bar))]
-                await asyncio.gather(*main_task)
-        elif site == 'zilli' and not only_create:
-            for file in os.listdir(self.path_zilli_csv):
-                await self.get_total(self.path_zilli_csv, file)
+                for file in os.listdir(self.path_dior_csv):
+                    self.start(file, 'dior')
+                    bar()
+        elif site == 'zilli':
+            self.total += len(os.listdir(self.path_zilli_csv))
             with alive_bar(self.total, title='Процесс формирования каталога с сайта \"Zilli\"', theme='smooth') as bar:
-                main_task = [asyncio.create_task(self.start_zilli(bar))]
-                await asyncio.gather(*main_task)
-        if create or only_create:
-            total = 0
-            if site == 'dior' or site == 'all':
-                total += len(os.listdir(self.path_dior_html))
-            if site == 'zilli' or site == 'all':
-                total += len(os.listdir(self.path_zilli_html))
-            with alive_bar(total, title='Процесс формирования PDF', theme='smooth') as bar:
-                await self.request_api_to_create_pdf(site, bar)
+                for file in os.listdir(self.path_zilli_csv):
+                    self.start(file, 'zilli')
+                    bar()
         else:
             return "Неизвестный аргумент"
 
@@ -127,7 +180,5 @@ if __name__ == '__main__':
         args.ok = False
     elif args.ok == 'true':
         args.ok = True
-    loop = asyncio.get_event_loop()
     total_creator = TotalCreator()
-    loop.run_until_complete(total_creator.total_start(args.site, args.cc, args.ok))
-    loop.close()
+    total_creator.total_start(args.site, args.cc, args.ok)

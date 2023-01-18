@@ -154,7 +154,10 @@ class ParserDior:
                 colours = product['color']['group']
             except BaseException as e:
                 colours = '--'
-            photos = await self.get_photos(product['url'], product['code'])
+            try:
+                photos = await self.get_photos(product['url'], product['code'])
+            except BaseException as e:
+                print(e)
             if not photos:
                 raise BaseException
             await self.create_csv(article, title, subtitle, size_and_fit, colours, photos)

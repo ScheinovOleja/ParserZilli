@@ -1,3 +1,3 @@
 source ./venv/bin/activate
-python create_pdf.py -s all -cc false -ok false
+python create_pdf.py -s all -cc true -ok false
 deactivate
