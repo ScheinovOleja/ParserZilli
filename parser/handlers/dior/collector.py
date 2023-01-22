@@ -5,7 +5,7 @@ from csv import DictWriter
 
 import aiocsv
 import aiofiles
-from aiohttp import ClientSession
+from aiohttp import ClientSession, TCPConnector
 from bs4 import BeautifulSoup
 
 
@@ -74,7 +74,7 @@ class ParserDior:
 
     async def get_photos(self, url, code):
         photos = []
-        async with ClientSession() as session:
+        async with ClientSession(connector=TCPConnector(verify_ssl=False)) as session:
             async with session.get(self.dior_url + url) as response:
                 extra_soup = BeautifulSoup(await response.text('utf-8'), "lxml")
                 photos_raw = extra_soup.find_all('img', alt=re.compile('aria_openGallery'))
@@ -102,7 +102,7 @@ class ParserDior:
         await asyncio.sleep(0.1)
 
     async def get_links(self):
-        async with ClientSession(headers=self.main_headers) as session:
+        async with ClientSession(headers=self.main_headers, connector=TCPConnector(verify_ssl=False)) as session:
             async with session.post(
                     self.url, json=self.main_body_bags if self.target == 'bags' else self.main_body_belts) as response:
                 main_json = json.loads(await response.text())
@@ -132,7 +132,7 @@ class ParserDior:
         try:
             article = f"{product['style_ref']}_{product['color']['code']}"
             self.second_body['variables']['id'] = article
-            async with ClientSession(headers=self.second_headers) as session:
+            async with ClientSession(headers=self.second_headers, connector=TCPConnector(verify_ssl=False)) as session:
                 async with session.post(self.detail_url, json=self.second_body) as response:
                     second_json = json.loads(await response.text())
                     product.update(second_json['data']['product'])

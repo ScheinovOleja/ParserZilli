@@ -2,7 +2,7 @@ import asyncio
 import base64
 
 from aiofiles import tempfile
-from aiohttp import ClientSession
+from aiohttp import ClientSession, TCPConnector
 from webptools import base64str2webp_base64str, grant_permission
 
 
@@ -19,7 +19,7 @@ async def create_b64_image(session, photo):
 async def get_photo_b64(photos):
     new_photos = []
     grant_permission()
-    async with ClientSession() as session:
+    async with ClientSession(connector=TCPConnector(verify_ssl=False)) as session:
         for i, photo_set in enumerate(photos):
             new_photos_set = []
             for photo in photo_set:

@@ -89,4 +89,5 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     total_parser = TotalParse()
     loop.run_until_complete(total_parser.total_start(args.site))
+    # loop.run_until_complete(total_parser.total_start("dior"))
     loop.close()

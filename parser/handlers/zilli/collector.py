@@ -4,7 +4,7 @@ from csv import DictWriter
 
 import aiocsv
 import aiofiles
-from aiohttp import ClientSession
+from aiohttp import ClientSession, TCPConnector
 from bs4 import BeautifulSoup, Tag, NavigableString
 
 
@@ -150,7 +150,7 @@ class ParserZilli:
         rt.cancel()
 
     async def get_links(self):
-        async with ClientSession() as session:
+        async with ClientSession(connector=TCPConnector(verify_ssl=False)) as session:
             async with session.get(self.url) as main_response:
                 main_soup = BeautifulSoup(await main_response.text(), "lxml")
                 self.product_list_links = main_soup.find_all('a', class_="product-thumbnail")
@@ -158,7 +158,7 @@ class ParserZilli:
 
     async def collect_zilli(self, link):
         try:
-            async with ClientSession() as session:
+            async with ClientSession(connector=TCPConnector(verify_ssl=False)) as session:
                 async with session.get(link.attrs['href']) as response:
                     soup = BeautifulSoup(await response.text(), 'lxml')
             await asyncio.sleep(0.5)

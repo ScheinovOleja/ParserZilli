@@ -122,7 +122,7 @@ class TotalCreator:
                     open(f"{self.path_zilli_html}/{html_file}"))
                 task = threading.Thread(target=asyncio.run, args=(new_args,))
                 tasks.append(task)
-                if len(tasks) == 5:
+                if len(tasks) == 2:
                     for task in tasks:
                         task.start()
                     for task in tasks:
